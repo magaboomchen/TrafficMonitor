@@ -39,3 +39,6 @@ pid/
 
 # Backup Files
 *~
+
+# Executable Files
+main
