@@ -26,6 +26,7 @@ using namespace std;
 struct vDesktop{
 	struct vDesktop *next;
 	char ipAdd[IPADDLEN];
+	in_addr addr;
 	unsigned int upLink;		// Bytes
 	unsigned int downLink;	// Bytes
 	float delay;
@@ -98,7 +99,7 @@ int parse_paras(int argc, char * argv[]){
 	vList=(vDesktop *)malloc(sizeof(struct vDesktop));
 	vList->next=NULL;
 	memset(vList->ipAdd,0,IPADDLEN);
-	vList->upLink=vList->downLink=vList->delay=0;
+	vList->addr.s_addr=vList->upLink=vList->downLink=vList->delay=0;
 
 	FILE *fp;
 	if(argc<=1 || (argc%2==0) ){
@@ -121,10 +122,12 @@ int parse_paras(int argc, char * argv[]){
 			vListTmp->next=(vDesktop *)malloc(sizeof(struct vDesktop));
 			vListTmp->next->next=NULL;
 			memset(vListTmp->next->ipAdd,0,IPADDLEN);
-			vListTmp->upLink=vListTmp->downLink=vListTmp->delay=0;
+			vListTmp->addr.s_addr=vListTmp->upLink=vListTmp->downLink=vListTmp->delay=0;
 
 			// insert ip add
 			strcpy(vListTmp->ipAdd,argv[++i]);
+			inet_aton(vListTmp->ipAdd,&(vListTmp->addr));
+			////printf("Test IP:%s\n",inet_ntoa(vListTmp->addr));
 		}
 		else if(strcmp(argv[i],"-f")==0){
 			char *fileName=argv[++i];
@@ -138,7 +141,8 @@ int parse_paras(int argc, char * argv[]){
 			struct vDesktop * vListTmp=vList;
 			while(!feof(fp)){
 				fscanf(fp,"%s\n",vListTmp->ipAdd);
-				printf("%s\n",vListTmp->ipAdd);
+				////printf("add ip %s from file\n",vListTmp->ipAdd);
+				inet_aton(vListTmp->ipAdd,&(vListTmp->addr));
 				vListTmp->next=(vDesktop *)malloc(sizeof(struct vDesktop));
 				vListTmp->next->next=NULL;
 				memset(vListTmp->next->ipAdd,0,IPADDLEN);
@@ -168,7 +172,8 @@ void *myTimer(void *pInterval){
 		while(vListTmp->next!=NULL){
 			float upLink=vListTmp->upLink/interval;
 			float downLink=vListTmp->downLink/interval;
-			printf("ip:%s\tupLink:%f Mbps\tdownlink:%f Mbps\n",vListTmp->ipAdd,upLink/1000.0/1000.0*8.0,downLink/1000.0/1000.0*8.0);
+			////printf("ip:%s\tupLink:%f Mbps\tdownlink:%f Mbps\n",vListTmp->ipAdd,upLink/1000.0/1000.0*8.0,downLink/1000.0/1000.0*8.0);
+			printf("ip:%s\tupTransfer:%u Bytes\tupLink:%f Mbps\t\n",vListTmp->ipAdd,(unsigned int)upLink,upLink/1000.0/1000.0*8.0);
 			vListTmp->upLink=vListTmp->downLink=vListTmp->delay=0;
 			vListTmp=vListTmp->next;
 		}
@@ -197,6 +202,8 @@ int main(int argc, char * argv[]){
 	char dstIP[IPADDLEN]={0};
 
 	printf("Start recvfrom:\n");
+	struct vDesktop *vListTmpPre=vList;
+	struct vDesktop *vListTmpLat=vList->next;
 	while(1 && closeSignal==false){
 		//Receive a network packet and copy in to buffer
 		ssize_t buflen=recvfrom(sock,buffer,65536,0,NULL,NULL);
@@ -206,36 +213,26 @@ int main(int argc, char * argv[]){
 		}
 		////printf("Recv raw packet successfully.\n");
 
-		source.sin_addr.s_addr = ip->saddr;
-		dest.sin_addr.s_addr = ip->daddr;
-
-		memset(&srcIP, 0, sizeof(IPADDLEN));
-		memset(&dstIP, 0, sizeof(IPADDLEN));
-		strcpy(srcIP, inet_ntoa(source.sin_addr));
-		strcpy(dstIP, inet_ntoa(dest.sin_addr));
-
 		// find the matched ip
-		struct vDesktop *vListTmpPre=vList;
-		struct vDesktop *vListTmpLat=vList->next;
+		vListTmpPre=vList;
+		vListTmpLat=vList->next;
 		if(vListTmpLat==NULL){printf("vDesktop list empty.\n");continue;}// Empty vDesktop list
 		while(vListTmpLat!=NULL){
 			////printf("src:%s  -> dst:%s\n", srcIP, dstIP);
 			// update vDesktop traffic statistics
-			if(strcmp(vListTmpPre->ipAdd, srcIP)==0 ){
+			if(vListTmpPre->addr.s_addr==ip->saddr){
 				vListTmpPre->upLink+=ntohs(ip->tot_len);
 				////printf("ip:%s\tuplink:%u Bytes\n",vListTmpPre->ipAdd,vListTmpPre->upLink);
 				break;
 			}
-			else if(strcmp(vListTmpPre->ipAdd, dstIP)==0 ){
-				vListTmpPre->downLink+=ntohs(ip->tot_len);
+			////else if( vListTmpPre->ipAdd==ip->daddr ){	
+				////vListTmpPre->downLink+=ntohs(ip->tot_len);
 				////printf("ip:%s\tdownlink:%u Bytes\n",vListTmpPre->ipAdd,vListTmpPre->downLink);
-				break;
-			}
+				////break;
+			////}
 			// continue find matched ip
-			else{
-				vListTmpPre=vListTmpLat;
-				vListTmpLat=vListTmpLat->next;
-			}
+			vListTmpPre=vListTmpLat;
+			vListTmpLat=vListTmpLat->next;
 		}
 
 	}
@@ -244,8 +241,8 @@ int main(int argc, char * argv[]){
 	close(sock);
 
 	// free vDesktop list
-	struct vDesktop *vListTmpPre=vList;
-	struct vDesktop *vListTmpLat=vList->next;
+	vListTmpPre=vList;
+	vListTmpLat=vList->next;
 	while(vListTmpLat!=NULL){
 		printf("free vDesktop %s\n",vListTmpPre->ipAdd);
 		free(vListTmpPre);
