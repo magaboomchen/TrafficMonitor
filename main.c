@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <errno.h>
 #include <malloc.h>
-#include <string.h>	//memset
-#include <stdlib.h>
+#include <string.h>	// memset
+#include <stdlib.h>	// malloc, free, exit
+
+#include <pthread.h>
 
 #include <unistd.h>	//close
 #include <netinet/in.h>
@@ -18,19 +20,20 @@
 #define IPADDLEN 40	// max ipv4/ipv6 address str length
 #define IPV4ADDLEN 32
 #define MAXIPLIST 32	// max virtual machine number under monitor
+#define RUNTIME 5 // program running time, unit: second
 using namespace std;
 
 struct vDesktop{
 	struct vDesktop *next;
 	char ipAdd[IPADDLEN];
-	unsigned int upLink;
-	unsigned int downLink;
+	unsigned int upLink;		// Bytes
+	unsigned int downLink;	// Bytes
 	float delay;
 };
 
 struct vDesktop *vList;		// Initial state (empty list): pointer -> vDesktop -> NULL
 char ifName[IFNAMSIZ];
-bool signal=false;
+bool closeSignal=false;
 
 int raw_init (const char *device)
 {
@@ -153,32 +156,48 @@ int parse_paras(int argc, char * argv[]){
 	else{printf("Please designate an interface.\n");return -1;}
 }
 
+void *myTimer(void *pInterval){
+	float interval = *(int*)pInterval;
+	int sumTime=0;
+	while(1){
+		sleep(interval);
+		if(++sumTime>RUNTIME){closeSignal=true;break;}
+		// calculate the traffic volume
+		struct vDesktop * vListTmp=vList;
+		printf("---------------------------------------------------------------------\n");
+		while(vListTmp->next!=NULL){
+			float upLink=vListTmp->upLink/interval;
+			float downLink=vListTmp->downLink/interval;
+			printf("ip:%s\tupLink:%f Mbps\tdownlink:%f Mbps\n",vListTmp->ipAdd,upLink/1000.0/1000.0*8.0,downLink/1000.0/1000.0*8.0);
+			vListTmp->upLink=vListTmp->downLink=vListTmp->delay=0;
+			vListTmp=vListTmp->next;
+		}
+	}
+}
+
 int main(int argc, char * argv[]){
 
 	if(parse_paras(argc, argv)<0){
 		return -1;
 	}
 
+	pthread_t thread1;
+	int interval = 1;	// unit: second
+	pthread_create(&thread1,NULL, &myTimer, &interval);
+
 	int sock=raw_init(ifName);
 
 	unsigned char *buffer = (unsigned char *) malloc(65536); //to receive data
 	memset(buffer,0,65536);
+	struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
+	struct sockaddr_in source, dest;
+	memset(&source, 0, sizeof(source));
+	memset(&dest, 0, sizeof(dest));
+	char srcIP[IPADDLEN]={0};
+	char dstIP[IPADDLEN]={0};
 
-	int count = 128;
 	printf("Start recvfrom:\n");
-	while(1){
-		if(signal==true){
-			// calculate the traffic volume
-			struct vDesktop * vListTmp=vList;
-			while(vListTmp->next!=NULL){
-				float upLink=vListTmp->upLink/INTERVAL/8;
-				float downLink=vListTmp->downLink/INTERVAL/8;
-				printf("ip:%s\tupLink:%u Mbps\tdownlink:%u Mbps\n",vListTmp->ipAdd,upLink,downLink);
-				vListTmp=vListTmp->next;
-			}
-			signal = false;
-		}
-
+	while(1 && closeSignal==false){
 		//Receive a network packet and copy in to buffer
 		ssize_t buflen=recvfrom(sock,buffer,65536,0,NULL,NULL);
 		if(buflen<0){
@@ -187,15 +206,11 @@ int main(int argc, char * argv[]){
 		}
 		////printf("Recv raw packet successfully.\n");
 
-		struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
-		struct sockaddr_in source, dest;
-		memset(&source, 0, sizeof(source));
 		source.sin_addr.s_addr = ip->saddr;
-		memset(&dest, 0, sizeof(dest));
 		dest.sin_addr.s_addr = ip->daddr;
 
-		char srcIP[IPADDLEN]={0};
-		char dstIP[IPADDLEN]={0};
+		memset(&srcIP, 0, sizeof(IPADDLEN));
+		memset(&dstIP, 0, sizeof(IPADDLEN));
 		strcpy(srcIP, inet_ntoa(source.sin_addr));
 		strcpy(dstIP, inet_ntoa(dest.sin_addr));
 
@@ -208,12 +223,12 @@ int main(int argc, char * argv[]){
 			// update vDesktop traffic statistics
 			if(strcmp(vListTmpPre->ipAdd, srcIP)==0 ){
 				vListTmpPre->upLink+=ntohs(ip->tot_len);
-				printf("ip:%s\tuplink:%u Bytes\n",vListTmpPre->ipAdd,vListTmpPre->upLink);
+				////printf("ip:%s\tuplink:%u Bytes\n",vListTmpPre->ipAdd,vListTmpPre->upLink);
 				break;
 			}
 			else if(strcmp(vListTmpPre->ipAdd, dstIP)==0 ){
 				vListTmpPre->downLink+=ntohs(ip->tot_len);
-				printf("ip:%s\tdownlink:%u Bytes\n",vListTmpPre->ipAdd,vListTmpPre->downLink);
+				////printf("ip:%s\tdownlink:%u Bytes\n",vListTmpPre->ipAdd,vListTmpPre->downLink);
 				break;
 			}
 			// continue find matched ip
@@ -223,8 +238,6 @@ int main(int argc, char * argv[]){
 			}
 		}
 
-		count--;
-		if(count<0){break;}
 	}
 
 	printf("finish!\n");
@@ -240,5 +253,6 @@ int main(int argc, char * argv[]){
 		vListTmpLat=vListTmpLat->next;
 	}
 	free(vListTmpPre);
+	pthread_join(thread1,NULL);
 	return 0;
 }
