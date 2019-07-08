@@ -131,12 +131,11 @@ int main(){
 }
 */
 
+
+
 int raw_init (const char *device)
 {
-    struct ifreq ifr;
     int raw_socket;
-
-    memset (&ifr, 0, sizeof (struct ifreq));
 
     /* Open A Raw Socket */
     if ((raw_socket = socket (PF_PACKET, SOCK_RAW, htons (ETH_P_ALL))) < 1)
@@ -144,6 +143,9 @@ int raw_init (const char *device)
         printf ("ERROR: Could not open socket, Got #?\n");
         return -1;
     }
+
+	struct ifreq ifr;
+    memset (&ifr, 0, sizeof (struct ifreq));
 
     /* Set the device to use */
     strcpy (ifr.ifr_name, device);
@@ -155,6 +157,10 @@ int raw_init (const char *device)
         return -1;
     }
 
+	if( ifr.ifr_flags & IFF_PROMISC != IFF_PROMISC){
+		printf("IFF_PROMISC not set.\n");
+	}
+
     /* Set the old flags plus the IFF_PROMISC flag */
     ifr.ifr_flags |= IFF_PROMISC;
     if (ioctl (raw_socket, SIOCSIFFLAGS, &ifr) == -1)
@@ -162,7 +168,11 @@ int raw_init (const char *device)
         perror ("Error: Could not set flag IFF_PROMISC");
         return -1;
     }
-    printf ("Entering promiscuous mode\n");
+    
+	if( ifr.ifr_flags & IFF_PROMISC == IFF_PROMISC){
+		printf ("Entering promiscuous mode\n");
+	}
+
 
     /* Configure the device */
 
@@ -178,8 +188,8 @@ int raw_init (const char *device)
 
 
 int main(){
-
-raw_init("eth0");
-printf("finish!\n");
-return 0;
+	int sock=raw_init("eth0");
+	printf("finish!\n");
+	close(sock);
+	return 0;
 }
