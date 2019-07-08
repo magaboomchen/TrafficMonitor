@@ -21,6 +21,15 @@
 using namespace std;
 
 char *ipList[MAXIPLIST];
+char ifName[IFNAMSIZ];
+
+struct vDesktop{
+	struct *vDesktop next;
+	char ipAdd[IPADDLEN];
+	int upLink;
+	int downLink;
+	float delay;
+};
 
 int raw_init (const char *device)
 {
@@ -62,7 +71,6 @@ int raw_init (const char *device)
 		printf ("Entering promiscuous mode\n");
 	}
 
-
     /* Configure the device */
 
     if (ioctl (raw_socket, SIOCGIFINDEX, &ifr) < 0)
@@ -74,17 +82,15 @@ int raw_init (const char *device)
     return raw_socket;
 }
 
-int main(int argc, char * argv[]){
+int parse_paras(int argc, char * argv[]){
 	/*
 	option				example
 	-i		interface		eth0
 	-ip		ip address	192.168.122.1
 	-f		files			ip_list.txt
-	*/
+	*/	
 
 	memset(ipList,0,sizeof(ipList));
-
-	char ifName[IFNAMSIZ];
 	FILE *fp;
 	if(argc<=1 || (argc%2==0) ){
 		printf("Input parameters number error!\n");
@@ -119,7 +125,7 @@ int main(int argc, char * argv[]){
 			}			
 			fclose(fp);
 			printf("Todo: Read file.\n");
-			return 1;
+			return -1;
 		}
 		else{
 			printf("Input parameters error!\n");
@@ -127,16 +133,24 @@ int main(int argc, char * argv[]){
 		}
 	}
 
-	//int sock=raw_init("eth0");
+	return 0;
+}
+
+int main(int argc, char * argv[]){
+
+	if(parse_paras(argc, argv)<0){
+		return -1;
+	}
+
 	int sock=raw_init(ifName);
 
 	unsigned char *buffer = (unsigned char *) malloc(65536); //to receive data
 	memset(buffer,0,65536);
 
 	int count = 10;
+	printf("Start recvfrom:\n");
 	while(1){
 		//Receive a network packet and copy in to buffer
-		printf("Start recvfrom:\n");
 		ssize_t buflen=recvfrom(sock,buffer,65536,0,NULL,NULL);
 		if(buflen<0){
 			perror("recvfrom: ");
@@ -144,7 +158,6 @@ int main(int argc, char * argv[]){
 		}
 		printf("Recv raw packet successfully.\n");
 
-		//unsigned short iphdrlen;
 		struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
 		struct sockaddr_in source, dest;
 		memset(&source, 0, sizeof(source));
@@ -163,6 +176,15 @@ int main(int argc, char * argv[]){
 				break;
 			}
 		}
+
+		/*
+		if(strcmp("192.168.122.104",srcIP)==0){
+			printf("src:%s  -> dst:%s\n",srcIP,dstIP);
+			getchar();
+		}else{
+			continue;
+		}
+		*/
 
 		count--;
 		if(count<0){break;}
