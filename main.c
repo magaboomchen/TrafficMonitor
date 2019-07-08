@@ -185,10 +185,41 @@ int raw_init (const char *device)
     return raw_socket;
 }
 
-
-
 int main(){
 	int sock=raw_init("eth0");
+
+	unsigned char *buffer = (unsigned char *) malloc(65536); //to receive data
+	memset(buffer,0,65536);
+
+	int count = 10;
+	while(1){
+		//Receive a network packet and copy in to buffer
+		printf("Start recvfrom:\n");
+		ssize_t buflen=recvfrom(sock,buffer,65536,0,NULL,NULL);
+		if(buflen<0){
+			perror("recvfrom: ");
+			return -1;
+		}
+		printf("Recv raw packet successfully.\n");
+
+		//unsigned short iphdrlen;
+		struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
+		struct sockaddr_in source, dest;
+		memset(&source, 0, sizeof(source));
+		source.sin_addr.s_addr = ip->saddr;
+		memset(&dest, 0, sizeof(dest));
+		dest.sin_addr.s_addr = ip->daddr;
+
+		char srcIP[IPADDLEN]={0};
+		char dstIP[IPADDLEN]={0};
+		strcpy(srcIP, inet_ntoa(source.sin_addr));
+		strcpy(dstIP, inet_ntoa(dest.sin_addr));
+		printf("src:%s  -> dst:%s\n",srcIP,dstIP);
+
+		count--;
+		if(count<0){break;}
+	}
+
 	printf("finish!\n");
 	close(sock);
 	return 0;
