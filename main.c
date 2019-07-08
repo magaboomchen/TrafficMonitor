@@ -20,16 +20,17 @@
 #define MAXIPLIST 32	// max virtual machine number under monitor
 using namespace std;
 
-char *ipList[MAXIPLIST];
-char ifName[IFNAMSIZ];
-
 struct vDesktop{
-	struct *vDesktop next;
+	struct vDesktop *next;
 	char ipAdd[IPADDLEN];
-	int upLink;
-	int downLink;
+	unsigned int upLink;
+	unsigned int downLink;
 	float delay;
 };
+
+struct vDesktop *vList;		// Initial state (empty list): pointer -> vDesktop -> NULL
+char ifName[IFNAMSIZ];
+bool signal=false;
 
 int raw_init (const char *device)
 {
@@ -90,25 +91,37 @@ int parse_paras(int argc, char * argv[]){
 	-f		files			ip_list.txt
 	*/	
 
-	memset(ipList,0,sizeof(ipList));
+	// Initial vDesktop list
+	vList=(vDesktop *)malloc(sizeof(struct vDesktop));
+	vList->next=NULL;
+	memset(vList->ipAdd,0,IPADDLEN);
+	vList->upLink=vList->downLink=vList->delay=0;
+
 	FILE *fp;
 	if(argc<=1 || (argc%2==0) ){
 		printf("Input parameters number error!\n");
 		return -1;
 	}
+	bool iFlag=false;
 	for(int i=1;i<argc;i++){
 		if(strcmp(argv[i],"-i")==0){
-			strcpy(ifName,argv[++i]);	
+			strcpy(ifName,argv[++i]);
+			iFlag = true;
 		}
 		else if(strcmp(argv[i],"-ip")==0){
-			for(int j=0;j<MAXIPLIST;j++){
-				if(ipList[j]==0){
-					ipList[j]=(char *)malloc(IPADDLEN*sizeof(char));
-					memset(ipList[j],0,IPADDLEN);
-					strcpy(ipList[j],argv[++i]);
-					break;
-				}
+			// find the back of list
+			struct vDesktop * vListTmp=vList;
+			while(vListTmp->next!=NULL){
+				vListTmp=vListTmp->next;
 			}
+			// add new slow
+			vListTmp->next=(vDesktop *)malloc(sizeof(struct vDesktop));
+			vListTmp->next->next=NULL;
+			memset(vListTmp->next->ipAdd,0,IPADDLEN);
+			vListTmp->upLink=vListTmp->downLink=vListTmp->delay=0;
+
+			// insert ip add
+			strcpy(vListTmp->ipAdd,argv[++i]);
 		}
 		else if(strcmp(argv[i],"-f")==0){
 			char *fileName=argv[++i];
@@ -117,15 +130,18 @@ int parse_paras(int argc, char * argv[]){
 				perror("file open error: ");
 				return -1;			
 			}
+
+			// add ipAdd from file
+			struct vDesktop * vListTmp=vList;
 			while(!feof(fp)){
-				char ipAdd[IPADDLEN];
-				memset(ipAdd,0,IPADDLEN);
-				fscanf(fp,"%s\n",&ipAdd);
-				printf("%s\n",ipAdd);				
+				fscanf(fp,"%s\n",vListTmp->ipAdd);
+				printf("%s\n",vListTmp->ipAdd);
+				vListTmp->next=(vDesktop *)malloc(sizeof(struct vDesktop));
+				vListTmp->next->next=NULL;
+				memset(vListTmp->next->ipAdd,0,IPADDLEN);
+				vListTmp=vListTmp->next;
 			}			
 			fclose(fp);
-			printf("Todo: Read file.\n");
-			return -1;
 		}
 		else{
 			printf("Input parameters error!\n");
@@ -133,7 +149,8 @@ int parse_paras(int argc, char * argv[]){
 		}
 	}
 
-	return 0;
+	if(iFlag==true){return 0;}
+	else{printf("Please designate an interface.\n");return -1;}
 }
 
 int main(int argc, char * argv[]){
@@ -147,16 +164,28 @@ int main(int argc, char * argv[]){
 	unsigned char *buffer = (unsigned char *) malloc(65536); //to receive data
 	memset(buffer,0,65536);
 
-	int count = 10;
+	int count = 128;
 	printf("Start recvfrom:\n");
 	while(1){
+		if(signal==true){
+			// calculate the traffic volume
+			struct vDesktop * vListTmp=vList;
+			while(vListTmp->next!=NULL){
+				float upLink=vListTmp->upLink/INTERVAL/8;
+				float downLink=vListTmp->downLink/INTERVAL/8;
+				printf("ip:%s\tupLink:%u Mbps\tdownlink:%u Mbps\n",vListTmp->ipAdd,upLink,downLink);
+				vListTmp=vListTmp->next;
+			}
+			signal = false;
+		}
+
 		//Receive a network packet and copy in to buffer
 		ssize_t buflen=recvfrom(sock,buffer,65536,0,NULL,NULL);
 		if(buflen<0){
 			perror("recvfrom: ");
 			return -1;
 		}
-		printf("Recv raw packet successfully.\n");
+		////printf("Recv raw packet successfully.\n");
 
 		struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
 		struct sockaddr_in source, dest;
@@ -170,21 +199,29 @@ int main(int argc, char * argv[]){
 		strcpy(srcIP, inet_ntoa(source.sin_addr));
 		strcpy(dstIP, inet_ntoa(dest.sin_addr));
 
-		for(int j=0;j<MAXIPLIST;j++){
-			if( strcmp(ipList[j],srcIP)==0 || strcmp(ipList[j],dstIP)==0  || ipList[j]==0){
-				printf("src:%s  -> dst:%s\n",srcIP,dstIP);
+		// find the matched ip
+		struct vDesktop *vListTmpPre=vList;
+		struct vDesktop *vListTmpLat=vList->next;
+		if(vListTmpLat==NULL){printf("vDesktop list empty.\n");continue;}// Empty vDesktop list
+		while(vListTmpLat!=NULL){
+			////printf("src:%s  -> dst:%s\n", srcIP, dstIP);
+			// update vDesktop traffic statistics
+			if(strcmp(vListTmpPre->ipAdd, srcIP)==0 ){
+				vListTmpPre->upLink+=ntohs(ip->tot_len);
+				printf("ip:%s\tuplink:%u Bytes\n",vListTmpPre->ipAdd,vListTmpPre->upLink);
 				break;
 			}
+			else if(strcmp(vListTmpPre->ipAdd, dstIP)==0 ){
+				vListTmpPre->downLink+=ntohs(ip->tot_len);
+				printf("ip:%s\tdownlink:%u Bytes\n",vListTmpPre->ipAdd,vListTmpPre->downLink);
+				break;
+			}
+			// continue find matched ip
+			else{
+				vListTmpPre=vListTmpLat;
+				vListTmpLat=vListTmpLat->next;
+			}
 		}
-
-		/*
-		if(strcmp("192.168.122.104",srcIP)==0){
-			printf("src:%s  -> dst:%s\n",srcIP,dstIP);
-			getchar();
-		}else{
-			continue;
-		}
-		*/
 
 		count--;
 		if(count<0){break;}
@@ -192,11 +229,16 @@ int main(int argc, char * argv[]){
 
 	printf("finish!\n");
 	close(sock);
-	for(int j=0;j<MAXIPLIST;j++){
-		if(ipList[j]!=0){
-			printf("free pointer: %s\n",ipList[j]);
-			free(ipList[j]);
-		}
+
+	// free vDesktop list
+	struct vDesktop *vListTmpPre=vList;
+	struct vDesktop *vListTmpLat=vList->next;
+	while(vListTmpLat!=NULL){
+		printf("free vDesktop %s\n",vListTmpPre->ipAdd);
+		free(vListTmpPre);
+		vListTmpPre=vListTmpLat;
+		vListTmpLat=vListTmpLat->next;
 	}
+	free(vListTmpPre);
 	return 0;
 }
