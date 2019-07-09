@@ -1,3 +1,11 @@
+/*
+reference
+https://www.tcpdump.org/pcap.html
+ */
+
+#include <pcap.h>
+#include <iostream>
+
 #include <stdio.h>
 #include <errno.h>
 #include <malloc.h>
@@ -11,245 +19,143 @@
 #include <net/if.h>// struct ifreq
 #include <sys/ioctl.h> // ioctl, SIOCGIFADDR
 #include <sys/socket.h> // socket
-#include <netinet/ether.h> // ETH_P_ALL
+#include <netinet/ether.h> // ETH_P_ALL, ETHER_ADDR_LEN
 #include <netpacket/packet.h> // struct sockaddr_ll
 #include <linux/ip.h> //iphdr
-#include <arpa/inet.h> // inet_ntoa
+#include <arpa/inet.h> // inet_ntoa, in_addr
 
-#define NIC "eth0"
-#define IPADDLEN 40	// max ipv4/ipv6 address str length
-#define IPV4ADDLEN 32
-#define MAXIPLIST 32	// max virtual machine number under monitor
-#define RUNTIME 5 // program running time, unit: second
+#include <signal.h> // ctrl-c, free RAM
+
+#include "global.h"
+#include "networkHeader.h"
+
 using namespace std;
 
-struct vDesktop{
-	struct vDesktop *next;
-	char ipAdd[IPADDLEN];
-	in_addr addr;
-	unsigned int upLink;		// Bytes
-	unsigned int downLink;	// Bytes
-	float delay;
-};
-
-struct vDesktop *vList;		// Initial state (empty list): pointer -> vDesktop -> NULL
-char ifName[IFNAMSIZ];
+int myPacketCount = 0;
+unsigned int trafficAmount=0;
+char * ipList[MAXIPLIST];
+unsigned int ipListLen=0;
 bool closeSignal=false;
+char ifName[IFNAMSIZ];
+struct vDesktop **vDesktopHash;
 
-int raw_init (const char *device)
+void freeMalloc(){
+    // free vList
+    for(int i=0;i<MAXIPLIST;i++){
+        if(ipList[i]!=NULL){
+            ////printf("free ip:%s\n",ipList[i]);
+            free(ipList[i]);
+        }
+    }
+
+    // free vDesktop
+    for(int i=0;i<HTLEN;i++){
+        free(vDesktopHash[i]);
+    }
+    free(vDesktopHash);
+}
+
+void ctrlc_message(int s) //ctrl+c
 {
-    int raw_socket;
-
-    /* Open A Raw Socket */
-    if ((raw_socket = socket (PF_PACKET, SOCK_RAW, htons (ETH_P_ALL))) < 1)
-    {
-        printf ("ERROR: Could not open socket, Got #?\n");
-        return -1;
-    }
-
-	struct ifreq ifr;
-    memset (&ifr, 0, sizeof (struct ifreq));
-
-    /* Set the device to use */
-    strcpy (ifr.ifr_name, device);
-
-    /* Get the current flags that the device might have */
-    if (ioctl (raw_socket, SIOCGIFFLAGS, &ifr) == -1)
-    {
-        perror ("Error: Could not retrive the flags from the device.\n");
-        return -1;
-    }
-
-	if( ifr.ifr_flags & IFF_PROMISC != IFF_PROMISC){
-		printf("IFF_PROMISC not set.\n");
-	}
-
-    /* Set the old flags plus the IFF_PROMISC flag */
-    ifr.ifr_flags |= IFF_PROMISC;
-    if (ioctl (raw_socket, SIOCSIFFLAGS, &ifr) == -1)
-    {
-        perror ("Error: Could not set flag IFF_PROMISC");
-        return -1;
-    }
-    
-	if( ifr.ifr_flags & IFF_PROMISC == IFF_PROMISC){
-		printf ("Entering promiscuous mode\n");
-	}
-
-    /* Configure the device */
-
-    if (ioctl (raw_socket, SIOCGIFINDEX, &ifr) < 0)
-    {
-        perror ("Error: Error getting the device index.\n");
-        return -1;
-    }
-
-    return raw_socket;
+    printf("caught signal %d\n",s);
+    freeMalloc();
+    exit(1);
 }
 
-int parse_paras(int argc, char * argv[]){
-	/*
-	option				example
-	-i		interface		eth0
-	-ip		ip address	192.168.122.1
-	-f		files			ip_list.txt
-	*/	
+void packetHandler(u_char *userData, const struct pcap_pkthdr *pkthdr, const u_char *packet)
+{
 
-	// Initial vDesktop list
-	vList=(vDesktop *)malloc(sizeof(struct vDesktop));
-	vList->next=NULL;
-	memset(vList->ipAdd,0,IPADDLEN);
-	vList->addr.s_addr=vList->upLink=vList->downLink=vList->delay=0;
+    ////printf("%d packet(s) captured\n",++myPacketCount);
+    //++myPacketCount;
+/*
+    ////printf("Packet length: %d\n", pkthdr->len);
+    ////printf("Number of bytes: %d\n", pkthdr->caplen);
+    ////printf("Recieved time: %s", ctime((const time_t *)&pkthdr->ts.tv_sec));
 
-	FILE *fp;
-	if(argc<=1 || (argc%2==0) ){
-		printf("Input parameters number error!\n");
-		return -1;
-	}
-	bool iFlag=false;
-	for(int i=1;i<argc;i++){
-		if(strcmp(argv[i],"-i")==0){
-			strcpy(ifName,argv[++i]);
-			iFlag = true;
-		}
-		else if(strcmp(argv[i],"-ip")==0){
-			// find the back of list
-			struct vDesktop * vListTmp=vList;
-			while(vListTmp->next!=NULL){
-				vListTmp=vListTmp->next;
-			}
-			// add new slow
-			vListTmp->next=(vDesktop *)malloc(sizeof(struct vDesktop));
-			vListTmp->next->next=NULL;
-			memset(vListTmp->next->ipAdd,0,IPADDLEN);
-			vListTmp->addr.s_addr=vListTmp->upLink=vListTmp->downLink=vListTmp->delay=0;
+    // The IP header
+	const struct sniff_ip *ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
+    ////printf("ip_src:%s\n",inet_ntoa(ip->ip_src));
+    int index=ntohl(ip->ip_src.s_addr)&0xFFFF;
 
-			// insert ip add
-			strcpy(vListTmp->ipAdd,argv[++i]);
-			inet_aton(vListTmp->ipAdd,&(vListTmp->addr));
-			////printf("Test IP:%s\n",inet_ntoa(vListTmp->addr));
-		}
-		else if(strcmp(argv[i],"-f")==0){
-			char *fileName=argv[++i];
-			fp=fopen(fileName,"r");
-			if(!fp){
-				perror("file open error: ");
-				return -1;			
-			}
+    // find the matched table
+    struct vDesktop * vListTmp=vDesktopHash[index];
+    while(vListTmp->next!=NULL){
+        if(vListTmp->addr.s_addr ==ip->ip_src.s_addr){
+            // match!
+            vListTmp->upLink+=pkthdr->caplen;
+            break;
+        }
+        vListTmp=vListTmp->next;
+    }
+*/
+    trafficAmount+=pkthdr->caplen;
 
-			// add ipAdd from file
-			struct vDesktop * vListTmp=vList;
-			while(!feof(fp)){
-				fscanf(fp,"%s\n",vListTmp->ipAdd);
-				////printf("add ip %s from file\n",vListTmp->ipAdd);
-				inet_aton(vListTmp->ipAdd,&(vListTmp->addr));
-				vListTmp->next=(vDesktop *)malloc(sizeof(struct vDesktop));
-				vListTmp->next->next=NULL;
-				memset(vListTmp->next->ipAdd,0,IPADDLEN);
-				vListTmp=vListTmp->next;
-			}			
-			fclose(fp);
-		}
-		else{
-			printf("Input parameters error!\n");
-			return -1;
-		}
-	}
-
-	if(iFlag==true){return 0;}
-	else{printf("Please designate an interface.\n");return -1;}
 }
 
-void *myTimer(void *pInterval){
-	float interval = *(int*)pInterval;
-	int sumTime=0;
-	while(1){
-		sleep(interval);
-		if(++sumTime>RUNTIME){closeSignal=true;break;}
-		// calculate the traffic volume
-		struct vDesktop * vListTmp=vList;
-		printf("---------------------------------------------------------------------\n");
-		while(vListTmp->next!=NULL){
-			float upLink=vListTmp->upLink/interval;
-			float downLink=vListTmp->downLink/interval;
-			////printf("ip:%s\tupLink:%f Mbps\tdownlink:%f Mbps\n",vListTmp->ipAdd,upLink/1000.0/1000.0*8.0,downLink/1000.0/1000.0*8.0);
-			printf("ip:%s\tupTransfer:%u Bytes\tupLink:%f Mbps\t\n",vListTmp->ipAdd,(unsigned int)upLink,upLink/1000.0/1000.0*8.0);
-			vListTmp->upLink=vListTmp->downLink=vListTmp->delay=0;
-			vListTmp=vListTmp->next;
-		}
-	}
-}
+int main(int argc, char * argv[])
+{
+    // initial
+    initial();
 
-int main(int argc, char * argv[]){
-
+    // parse input parameters
 	if(parse_paras(argc, argv)<0){
 		return -1;
 	}
 
+    // catch ctrl-c
+    struct sigaction sigIntHandler;
+    sigIntHandler.sa_handler = ctrlc_message;
+    sigemptyset(&sigIntHandler.sa_mask);
+    sigIntHandler.sa_flags = 0;
+    sigaction(SIGINT,&sigIntHandler,NULL);
+
+    // start myTimer
 	pthread_t thread1;
 	int interval = 1;	// unit: second
 	pthread_create(&thread1,NULL, &myTimer, &interval);
 
-	int sock=raw_init(ifName);
+    // set the interface, descriptor, error buffer
+    char *dev;
+    pcap_t *descr;
+    char errbuf[PCAP_ERRBUF_SIZE];
 
-	unsigned char *buffer = (unsigned char *) malloc(65536); //to receive data
-	memset(buffer,0,65536);
-	struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
-	struct sockaddr_in source, dest;
-	memset(&source, 0, sizeof(source));
-	memset(&dest, 0, sizeof(dest));
-	char srcIP[IPADDLEN]={0};
-	char dstIP[IPADDLEN]={0};
+    /*
+    dev = pcap_lookupdev(errbuf);
+    if (dev == NULL)
+    {
+        printf("pcap_lookupdev() failed: %s\n",errbuf);
+        return 1;
+    }
+    */
 
-	printf("Start recvfrom:\n");
-	struct vDesktop *vListTmpPre=vList;
-	struct vDesktop *vListTmpLat=vList->next;
-	while(1 && closeSignal==false){
-		//Receive a network packet and copy in to buffer
-		ssize_t buflen=recvfrom(sock,buffer,65536,0,NULL,NULL);
-		if(buflen<0){
-			perror("recvfrom: ");
-			return -1;
-		}
-		////printf("Recv raw packet successfully.\n");
+    // set the dev name
+    dev=ifName;
+    printf("dev: %s\n",dev);
 
-		// find the matched ip
-		vListTmpPre=vList;
-		vListTmpLat=vList->next;
-		if(vListTmpLat==NULL){printf("vDesktop list empty.\n");continue;}// Empty vDesktop list
-		while(vListTmpLat!=NULL){
-			////printf("src:%s  -> dst:%s\n", srcIP, dstIP);
-			// update vDesktop traffic statistics
-			if(vListTmpPre->addr.s_addr==ip->saddr){
-				vListTmpPre->upLink+=ntohs(ip->tot_len);
-				////printf("ip:%s\tuplink:%u Bytes\n",vListTmpPre->ipAdd,vListTmpPre->upLink);
-				break;
-			}
-			////else if( vListTmpPre->ipAdd==ip->daddr ){	
-				////vListTmpPre->downLink+=ntohs(ip->tot_len);
-				////printf("ip:%s\tdownlink:%u Bytes\n",vListTmpPre->ipAdd,vListTmpPre->downLink);
-				////break;
-			////}
-			// continue find matched ip
-			vListTmpPre=vListTmpLat;
-			vListTmpLat=vListTmpLat->next;
-		}
+    // sniff the dev
+    descr = pcap_open_live(dev, BUFSIZ, 1, -1, errbuf);
+    if (descr == NULL)
+    {
+        printf("pcap_open_live() failed: %s\n",errbuf);
+        return 1;
+    }
+/*
+    // construct a filter
+    struct bpf_program filter;
+    pcap_compile(descr, &filter, " ", 1, 0);
+    pcap_setfilter(descr, &filter);
+*/
+    // capture packets
+    if (pcap_loop(descr, MAXPACKET, packetHandler, NULL) < 0)
+    {
+        printf("pcap_loop() failed: %s\n", pcap_geterr(descr));
+        return 1;
+    }
 
-	}
+    printf("capture finished\n");
 
-	printf("finish!\n");
-	close(sock);
-
-	// free vDesktop list
-	vListTmpPre=vList;
-	vListTmpLat=vList->next;
-	while(vListTmpLat!=NULL){
-		printf("free vDesktop %s\n",vListTmpPre->ipAdd);
-		free(vListTmpPre);
-		vListTmpPre=vListTmpLat;
-		vListTmpLat=vListTmpLat->next;
-	}
-	free(vListTmpPre);
+    pcap_close(descr);
 	pthread_join(thread1,NULL);
-	return 0;
+
+    return 0;
 }

@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "if.h": "c",
+        "global.h": "c",
+        "packet.h": "c",
+        "socket.h": "c",
+        "ip.h": "c",
+        "inet.h": "c",
+        "networkheader.h": "c",
+        "ether.h": "c"
+    }
+}
