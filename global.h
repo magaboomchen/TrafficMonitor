@@ -11,7 +11,7 @@ using namespace std;
 #define HTLEN 256*256
 
 extern int myPacketCount;
-extern unsigned int trafficAmount;
+//extern unsigned int trafficAmount;
 extern char * ipList[MAXIPLIST];
 extern unsigned int ipListLen;
 extern bool closeSignal;

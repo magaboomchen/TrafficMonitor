@@ -32,7 +32,7 @@ https://www.tcpdump.org/pcap.html
 using namespace std;
 
 int myPacketCount = 0;
-unsigned int trafficAmount=0;
+//unsigned int trafficAmount=0;
 char * ipList[MAXIPLIST];
 unsigned int ipListLen=0;
 bool closeSignal=false;
@@ -67,7 +67,7 @@ void packetHandler(u_char *userData, const struct pcap_pkthdr *pkthdr, const u_c
 
     ////printf("%d packet(s) captured\n",++myPacketCount);
     //++myPacketCount;
-/*
+
     ////printf("Packet length: %d\n", pkthdr->len);
     ////printf("Number of bytes: %d\n", pkthdr->caplen);
     ////printf("Recieved time: %s", ctime((const time_t *)&pkthdr->ts.tv_sec));
@@ -82,13 +82,13 @@ void packetHandler(u_char *userData, const struct pcap_pkthdr *pkthdr, const u_c
     while(vListTmp->next!=NULL){
         if(vListTmp->addr.s_addr ==ip->ip_src.s_addr){
             // match!
-            vListTmp->upLink+=pkthdr->caplen;
+            vListTmp->upLink+=pkthdr->len;
             break;
         }
         vListTmp=vListTmp->next;
     }
-*/
-    trafficAmount+=pkthdr->caplen;
+
+    //trafficAmount+=pkthdr->len;
 
 }
 
@@ -119,14 +119,14 @@ int main(int argc, char * argv[])
     pcap_t *descr;
     char errbuf[PCAP_ERRBUF_SIZE];
 
-    /*
+    
     dev = pcap_lookupdev(errbuf);
     if (dev == NULL)
     {
         printf("pcap_lookupdev() failed: %s\n",errbuf);
         return 1;
     }
-    */
+    
 
     // set the dev name
     dev=ifName;
@@ -139,12 +139,12 @@ int main(int argc, char * argv[])
         printf("pcap_open_live() failed: %s\n",errbuf);
         return 1;
     }
-/*
+
     // construct a filter
     struct bpf_program filter;
     pcap_compile(descr, &filter, " ", 1, 0);
     pcap_setfilter(descr, &filter);
-*/
+
     // capture packets
     if (pcap_loop(descr, MAXPACKET, packetHandler, NULL) < 0)
     {
