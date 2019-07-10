@@ -53,7 +53,6 @@ void *myTimer(void *pInterval){
 				}
 				vListTmp=vListTmp->next;
 			}
-
 		}
 
 		//printf("trafficAmount:%u Bytes, %f Mbps\n",trafficAmount,trafficAmount/interval/1000.0/1000.0*8);

@@ -77,10 +77,14 @@ void packetHandler(u_char *userData, const struct pcap_pkthdr *pkthdr, const u_c
     ////printf("ip_src:%s\n",inet_ntoa(ip->ip_src));
     int index=ntohl(ip->ip_src.s_addr)&0xFFFF;
 
+    // The TCP header
+    size_ip = IP_HL(ip)*4;
+    const struct sniff_tcp *tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
+
     // find the matched table
     struct vDesktop * vListTmp=vDesktopHash[index];
     while(vListTmp->next!=NULL){
-        if(vListTmp->addr.s_addr ==ip->ip_src.s_addr){
+        if(    vListTmp->addr.s_addr ==ip->ip_src.s_addr  && tcp->th_dport == htons(u_short(5201))  ){
             // match!
             vListTmp->upLink+=pkthdr->len;
             break;

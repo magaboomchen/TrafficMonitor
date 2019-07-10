@@ -21,6 +21,7 @@ struct vDesktop{
 	struct vDesktop *next;
 	char ipAdd[IPADDLEN];
 	struct in_addr addr;
+	struct in_addr clientAddr;
 	unsigned int upLink;		// Bytes
 	unsigned int downLink;	// Bytes
 	float delay;
