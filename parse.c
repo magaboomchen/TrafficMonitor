@@ -135,3 +135,29 @@ int parse_paras(int argc, char * argv[]){
 	else{printf("Please designate an interface.\n");return -1;}
 
 }
+
+
+float parsePingRtt(const char * buf){
+	/* 
+	PING 0.0.0.0 (127.0.0.1) 56(84) bytes of data.
+64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.096 ms
+
+--- 0.0.0.0 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.096/0.096/0.096/0.000 ms
+
+ */
+
+	char * bufTmp=(char *)buf;
+	const char str1[] = "time=";
+	char *p1 = strstr(bufTmp, str1);
+	const char str2[] = " ms";
+	char *p2 = strstr(bufTmp, str2);
+	char rtt[32];
+	////printf("p1:%s\np2:%s\n\n",p1,p2);
+	strncpy(rtt,p1+5,p2-p1-5);
+	////printf("rtt:%s\n",rtt);
+	double dRtt=atof(rtt);
+
+	return (float)dRtt;
+}

@@ -84,9 +84,11 @@ void packetHandler(u_char *userData, const struct pcap_pkthdr *pkthdr, const u_c
     // find the matched table
     struct vDesktop * vListTmp=vDesktopHash[index];
     while(vListTmp->next!=NULL){
-        if(    vListTmp->addr.s_addr ==ip->ip_src.s_addr  && tcp->th_dport == htons(u_short(5201))  ){
+        //if(  vListTmp->addr.s_addr ==ip->ip_src.s_addr  && tcp->th_dport == htons(u_short(5201))  ){
+        if(  vListTmp->addr.s_addr ==ip->ip_src.s_addr ){
             // match!
             vListTmp->upLink+=pkthdr->len;
+            vListTmp->clientAddr=ip->ip_dst;
             break;
         }
         vListTmp=vListTmp->next;
@@ -115,7 +117,7 @@ int main(int argc, char * argv[])
 
     // start myTimer
 	pthread_t thread1;
-	int interval = 1;	// unit: second
+	int interval = INTERVAL;	// unit: second
 	pthread_create(&thread1,NULL, &myTimer, &interval);
 
     // set the interface, descriptor, error buffer
@@ -146,7 +148,10 @@ int main(int argc, char * argv[])
 
     // construct a filter
     struct bpf_program filter;
-    pcap_compile(descr, &filter, " ", 1, 0);
+    char filterSyntax[256];
+    sprintf(filterSyntax, "tcp portrange %u-%u || port %u", VNCPORT, VNCPORT+MAXVDEKTOP, RDPPORT);
+    printf("filtlerSyntax: %s\n",filterSyntax);
+    pcap_compile(descr, &filter, filterSyntax, 1, 0);
     pcap_setfilter(descr, &filter);
 
     // capture packets

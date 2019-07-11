@@ -22,6 +22,7 @@
 
 using namespace std;
 
+
 void *myTimer(void *pInterval){
 	float interval = *(int*)pInterval;
 	int sumTime=0;
@@ -43,12 +44,37 @@ void *myTimer(void *pInterval){
 			struct vDesktop * vListTmp=vDesktopHash[index];
 			while(vListTmp->next!=NULL){
 				////printf("myTimer ip:%s\n", inet_ntoa(vListTmp->addr));
-				if(vListTmp->addr.s_addr ==in.s_addr){
-					// match!
+				if(vListTmp->addr.s_addr ==in.s_addr){	// match!
+					// calculate upLink
 					float upLink=vListTmp->upLink/interval;
 					////float downLink=vListTmp->downLink/interval;
-					printf("ip:%s\tupTransfer:%u KBytes\tupLink:%f Mbps\t\n",vListTmp->ipAdd,(unsigned int)(upLink/1000.0),upLink/1000.0/1000.0*8.0);
-					vListTmp->upLink=vListTmp->downLink=vListTmp->delay=0;
+
+					if(vListTmp->clientAddr.s_addr!=0 && upLink>0){
+						// ping for rtt
+						char pingRule[256];
+						sprintf(pingRule,"ping -c1 %s ",inet_ntoa(vListTmp->clientAddr));
+
+						FILE   *stream;
+						char   buf[1024];
+						memset( buf, '\0', sizeof(buf) );
+						stream = popen( pingRule, "r" );
+						fread( buf, sizeof(char), sizeof(buf), stream);
+						////printf("buf: %s\n",buf);
+						pclose( stream );
+
+						// get rtt
+						vListTmp->rtt= parsePingRtt(buf);
+					}
+
+					// print results
+					if(upLink/1000.0/1000.0*8.0>1000){
+						printf("Server/VM ip: %s\tClient ip: %s\n\tupLink:%f Gbps\trtt: %f ms\n",vListTmp->ipAdd,inet_ntoa(vListTmp->clientAddr), upLink/1000.0/1000.0/1000.0*8.0,vListTmp->rtt);
+					}else{
+						printf("Server/VM ip: %s\tClient ip: %s\n\tupLink:%f Mbps\trtt: %f ms\n",vListTmp->ipAdd,inet_ntoa(vListTmp->clientAddr),upLink/1000.0/1000.0*8.0,vListTmp->rtt);
+					}
+
+					// reset
+					vListTmp->upLink=vListTmp->downLink=vListTmp->rtt=0;
 					break;
 				}
 				vListTmp=vListTmp->next;
