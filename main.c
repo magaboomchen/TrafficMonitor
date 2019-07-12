@@ -93,6 +93,99 @@ void packetHandler(u_char *userData, const struct pcap_pkthdr *pkthdr, const u_c
     ////printf("ip_src:%s\n",inet_ntoa(ip->ip_src));
 
     // upLink
+    u_short port = ntohs(tcp->th_sport);
+    if(  port == RDPPORT || (port >= VNCPORT && port <= VNCPORT+MAXVDEKTOP) ){
+        unsigned int index=ntohl(ip->ip_src.s_addr)&0xFFFF;
+        struct vDesktop * vListTmp=vDesktopHash[index];
+        bool fFlag = false;
+        while(vListTmp->next!=NULL){
+            if(  0 == memcmp(&vListTmp->addr,&ip->ip_src,sizeof(struct in_addr)*2) && 0 == memcmp(&vListTmp->th_sport,&tcp->th_sport,sizeof(u_short)*2) ){
+                // match
+                fFlag=true;
+                // analyses
+                vListTmp->upLink+=pkthdr->len;
+                if(vListTmp->state==UNCONNECTED){
+                    // first capture the tcp segment
+                    ////vListTmp->clientAddr=ip->ip_dst;
+                    ////vListTmp->th_sport=tcp->th_sport;
+                    ////vListTmp->th_dport=tcp->th_dport;
+                    vListTmp->state=CONNECTED;
+                }else if(vListTmp->state==CONNECTED){
+                    ////printf("captured tcp seq:%u\n",ntohl(tcp->th_seq) );
+                    vListTmp->th_seq=ntohl(tcp->th_seq) + pkthdr->len - SIZE_ETHERNET - size_ip - size_tcp;
+                    ////printf("desired ack seq:%u\n",vListTmp->th_seq );
+                    vListTmp->ts=pkthdr->ts;
+                    ////printf("ts:%d,%d\n",vListTmp->ts.tv_sec,vListTmp->ts.tv_usec);
+                    vListTmp->state=WAITACK;
+                }else if(vListTmp->state==WAITACK){
+                    // do nothing
+                }else if(vListTmp->state!=PAUSE){
+                    printf("Error capture state.\n");
+                    vListTmp->state=UNCONNECTED;
+                }else{
+                    // different port
+                }
+                break;
+            }else{
+                vListTmp=vListTmp->next;
+            }
+        }
+        if(fFlag==false){
+            // add new block
+			vListTmp->next=(struct vDesktop *)malloc(sizeof(struct vDesktop));
+            memset(vListTmp->next,0,sizeof(struct vDesktop));
+            vListTmp->next->next=NULL;
+
+            // fill in information
+            memcpy(&vListTmp->addr,&ip->ip_src,sizeof(struct in_addr)*2);
+            memcpy(&vListTmp->th_sport,&tcp->th_sport,sizeof(u_short)*2);
+        }
+    }
+
+    // downLink
+    port = ntohs(tcp->th_dport);
+    if( port == RDPPORT || (port >= VNCPORT && port <= VNCPORT+MAXVDEKTOP) ){
+        unsigned int index=ntohl(ip->ip_dst.s_addr)&0xFFFF;
+        struct vDesktop *vListTmp=vDesktopHash[index];
+        bool fFlag = false;
+        while(vListTmp->next!=NULL){
+            if( vListTmp->addr.s_addr == ip->ip_dst.s_addr && vListTmp->clientAddr.s_addr == ip->ip_src.s_addr && vListTmp->th_sport == tcp->th_dport && vListTmp->th_dport == tcp->th_sport ){             
+                // match
+                fFlag=true;
+                // analyses
+                vListTmp->downLink+=pkthdr->len;
+                if(vListTmp->state==WAITACK){
+                    ////printf("get downLink packet, ack: %u\n",htonl(tcp->th_ack));
+                    if(tcp->th_ack == htonl(vListTmp->th_seq)){
+                        ////printf("get ack\n");
+                        vListTmp->te=pkthdr->ts;
+                        ////printf("te:%d,%d\n",vListTmp->te.tv_sec,vListTmp->te.tv_usec);
+                        vListTmp->state=PAUSE;
+                    }
+                }
+                break;
+            }else{
+                vListTmp=vListTmp->next;
+            }
+        }
+        if(fFlag==false){
+            
+            // add new block
+			vListTmp->next=(struct vDesktop *)malloc(sizeof(struct vDesktop));
+            memset(vListTmp->next,0,sizeof(struct vDesktop));
+            vListTmp->next->next=NULL;
+
+            // fill in information
+            vListTmp->addr.s_addr = ip->ip_dst.s_addr;
+            vListTmp->clientAddr.s_addr = ip->ip_src.s_addr;
+            vListTmp->th_sport = tcp->th_dport;
+            vListTmp->th_dport = tcp->th_sport;
+            
+        }
+    }
+
+/*
+    // upLink
     int index=ntohl(ip->ip_src.s_addr)&0xFFFF;
     struct vDesktop * vListTmp=vDesktopHash[index];
     bool fFlag=false;
@@ -168,7 +261,7 @@ void packetHandler(u_char *userData, const struct pcap_pkthdr *pkthdr, const u_c
 
     ////printf("end\n");
     //trafficAmount+=pkthdr->len;
-
+*/
 }
 
 int main(int argc, char * argv[])

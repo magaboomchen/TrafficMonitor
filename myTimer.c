@@ -19,9 +19,9 @@
 #include <arpa/inet.h> // inet_ntoa, in_addr
 
 #include "global.h"
+#include "print.h"
 
 using namespace std;
-
 
 void *myTimer(void *pInterval){
 	float interval = *(int*)pInterval;
@@ -34,6 +34,7 @@ void *myTimer(void *pInterval){
 		printf("---------------------------------------------------------------------\n");
         //printf("packetCount:%d\n",myPacketCount);
 
+		float sumBandwidth=0;
 		for(int i=0;i<ipListLen;i++){
 			struct in_addr in;
 			inet_aton(ipList[i],&in);
@@ -48,16 +49,17 @@ void *myTimer(void *pInterval){
 					// match!
 					float upLink=vListTmp->upLink/interval;
 					////float downLink=vListTmp->downLink/interval;
+					sumBandwidth+=upLink;
 
 					if(vListTmp->upLink<=0){vListTmp=vListTmp->next;continue;}
 
 					// print traffic volume results
-					printf("Server/VM : %s:%u\tClient : %s:%u\n\t",
-						vListTmp->ipAdd,ntohs(vListTmp->th_sport),inet_ntoa(vListTmp->clientAddr),ntohs(vListTmp->th_dport));
+					printf("Server/VM : %s:%u\t",inet_ntoa(vListTmp->addr),ntohs(vListTmp->th_sport));
+					printf("Client : %s:%u\n\t",inet_ntoa(vListTmp->clientAddr),ntohs(vListTmp->th_dport));
 					if(upLink/1000.0/1000.0*8.0>1000){
-						printf("upLink:%f Gbps\t",upLink/1000.0/1000.0/1000.0*8.0);
+						printf("upLink:" YELLOW "%f" NONE " Gbps\t",upLink/1000.0/1000.0/1000.0*8.0);
 					}else{
-						printf("upLink:%f Mbps\t",upLink/1000.0/1000.0*8.0);
+						printf("upLink:" YELLOW "%f" NONE " Mbps\t",upLink/1000.0/1000.0*8.0);
 					}
 
 					////printf("start time: %d.%d\t end time: %d.%d\n",vListTmp->ts.tv_sec,vListTmp->ts.tv_usec, vListTmp->te.tv_sec, vListTmp->te.tv_usec);
@@ -85,7 +87,7 @@ void *myTimer(void *pInterval){
 					// print rtt results
 					if(vListTmp->te.tv_sec!=0){
 						vListTmp->rtt= ((vListTmp->te.tv_sec-vListTmp->ts.tv_sec)*1000000+vListTmp->te.tv_usec-vListTmp->ts.tv_usec)/1000.0;
-						printf("rtt: %f ms\n",vListTmp->rtt);
+						printf("rtt: " YELLOW "%f" NONE " ms\n",vListTmp->rtt);
 					}else{
 						vListTmp->rtt = -1;
 						printf("rtt: NULL ms\n");
@@ -95,11 +97,18 @@ void *myTimer(void *pInterval){
 					vListTmp->state=vListTmp->th_seq=vListTmp->upLink=vListTmp->downLink=vListTmp->rtt=0;
 					memset(&(vListTmp->ts),0,sizeof(struct timeval));
 					memset(&(vListTmp->te),0,sizeof(struct timeval));
-					break;
+					//break;
 				}
 				vListTmp=vListTmp->next;
 			}
 		}
+
+		if(sumBandwidth/1000.0/1000.0*8.0>1000){
+			printf("sumBandwidth:" GREEN "%f" NONE " Gbps\n",sumBandwidth/1000.0/1000.0/1000.0*8.0);
+		}else{
+			printf("sumBandwidth:" GREEN "%f" NONE " Mbps\n",sumBandwidth/1000.0/1000.0*8.0);
+		}
+
 
 		//printf("trafficAmount:%u Bytes, %f Mbps\n",trafficAmount,trafficAmount/interval/1000.0/1000.0*8);
 		//trafficAmount=0;

@@ -32,7 +32,7 @@ extern char ifName[IFNAMSIZ];
 
 struct vDesktop{
 	struct vDesktop *next;
-	char ipAdd[IPADDLEN];		// VM ip address in string
+	////char ipAdd[IPADDLEN];		// VM ip address in string
 
 	// TCP connection information
 	struct in_addr addr;		// VM ip address in u_32

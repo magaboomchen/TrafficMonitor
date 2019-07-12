@@ -63,6 +63,7 @@ int parse_paras(int argc, char * argv[]){
 		}
 		else if(strcmp(argv[i],"-ip")==0){
             i++;
+			/*
             // calculate the hash table index
             struct in_addr inp;
             inet_aton(argv[i],&inp);
@@ -82,9 +83,10 @@ int parse_paras(int argc, char * argv[]){
 
 			// insert ip add
 			strcpy(vListTmp->ipAdd,argv[i]);
-			strcpy(ipList[ipListLen++],argv[i]);
 			inet_aton(vListTmp->ipAdd,&(vListTmp->addr));
 			////printf("Test IP:%s\n",inet_ntoa(vListTmp->addr));
+			*/
+			strcpy(ipList[ipListLen++],argv[i]);
 		}
 		else if(strcmp(argv[i],"-f")==0){
             i++;
@@ -100,6 +102,7 @@ int parse_paras(int argc, char * argv[]){
                 char charTmp[IPADDLEN];
                 fscanf(fp,"%s\n",charTmp);
 
+				/*
                 // calculate the hash table index
                 struct in_addr inp;
                 inet_aton(charTmp,&inp);
@@ -119,9 +122,10 @@ int parse_paras(int argc, char * argv[]){
 
                 // insert ip add
                 strcpy(vListTmp->ipAdd,charTmp);
-				strcpy(ipList[ipListLen++],charTmp);
                 inet_aton(vListTmp->ipAdd,&(vListTmp->addr));
                 ////printf("Test IP:%s\n",inet_ntoa(vListTmp->addr));
+				*/
+				strcpy(ipList[ipListLen++],charTmp);
 			}
 			fclose(fp);
 		}
