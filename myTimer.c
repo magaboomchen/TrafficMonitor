@@ -25,7 +25,7 @@ using namespace std;
 
 void *myTimer(void *pInterval){
 	float interval = *(int*)pInterval;
-	int sumTime=0;
+	unsigned int sumTime=0;
 	while(1){
 		sleep(interval);
 
@@ -44,11 +44,26 @@ void *myTimer(void *pInterval){
 			struct vDesktop * vListTmp=vDesktopHash[index];
 			while(vListTmp->next!=NULL){
 				////printf("myTimer ip:%s\n", inet_ntoa(vListTmp->addr));
-				if(vListTmp->addr.s_addr ==in.s_addr){	// match!
-					// calculate upLink
+				if(vListTmp->addr.s_addr == in.s_addr){	
+					// match!
 					float upLink=vListTmp->upLink/interval;
 					////float downLink=vListTmp->downLink/interval;
 
+					if(vListTmp->upLink<=0){vListTmp=vListTmp->next;continue;}
+
+					// print traffic volume results
+					printf("Server/VM : %s:%u\tClient : %s:%u\n\t",
+						vListTmp->ipAdd,ntohs(vListTmp->th_sport),inet_ntoa(vListTmp->clientAddr),ntohs(vListTmp->th_dport));
+					if(upLink/1000.0/1000.0*8.0>1000){
+						printf("upLink:%f Gbps\t",upLink/1000.0/1000.0/1000.0*8.0);
+					}else{
+						printf("upLink:%f Mbps\t",upLink/1000.0/1000.0*8.0);
+					}
+
+					////printf("start time: %d.%d\t end time: %d.%d\n",vListTmp->ts.tv_sec,vListTmp->ts.tv_usec, vListTmp->te.tv_sec, vListTmp->te.tv_usec);
+					////printf("desired ack: %u\n",vListTmp->th_seq);
+
+					/*  use ping to measure rtt, may be dropped by firewall
 					if(vListTmp->clientAddr.s_addr!=0 && upLink>0){
 						// ping for rtt
 						char pingRule[256];
@@ -65,16 +80,21 @@ void *myTimer(void *pInterval){
 						// get rtt
 						vListTmp->rtt= parsePingRtt(buf);
 					}
+					*/
 
-					// print results
-					if(upLink/1000.0/1000.0*8.0>1000){
-						printf("Server/VM ip: %s\tClient ip: %s\n\tupLink:%f Gbps\trtt: %f ms\n",vListTmp->ipAdd,inet_ntoa(vListTmp->clientAddr), upLink/1000.0/1000.0/1000.0*8.0,vListTmp->rtt);
+					// print rtt results
+					if(vListTmp->te.tv_sec!=0){
+						vListTmp->rtt= ((vListTmp->te.tv_sec-vListTmp->ts.tv_sec)*1000000+vListTmp->te.tv_usec-vListTmp->ts.tv_usec)/1000.0;
+						printf("rtt: %f ms\n",vListTmp->rtt);
 					}else{
-						printf("Server/VM ip: %s\tClient ip: %s\n\tupLink:%f Mbps\trtt: %f ms\n",vListTmp->ipAdd,inet_ntoa(vListTmp->clientAddr),upLink/1000.0/1000.0*8.0,vListTmp->rtt);
+						vListTmp->rtt = -1;
+						printf("rtt: NULL ms\n");
 					}
 
 					// reset
-					vListTmp->upLink=vListTmp->downLink=vListTmp->rtt=0;
+					vListTmp->state=vListTmp->th_seq=vListTmp->upLink=vListTmp->downLink=vListTmp->rtt=0;
+					memset(&(vListTmp->ts),0,sizeof(struct timeval));
+					memset(&(vListTmp->te),0,sizeof(struct timeval));
 					break;
 				}
 				vListTmp=vListTmp->next;
