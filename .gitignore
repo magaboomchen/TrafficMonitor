@@ -32,7 +32,6 @@
 *.app
 
 # Directories
-shell/
 log/
 tmp/
 pid/
